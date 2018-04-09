@@ -13,11 +13,20 @@
   \returns 0 on success. <0 in case of initialization failure.
 */
 int SIM_CoreReset(void) {
+}
+
+/*! SIM_CoreClkTick: Update the core simulator's state given one clock cycle.
+  This function is expected to update the core pipeline given a clock cycle event.
+*/
+void SIM_CoreClkTick() {
   pipeStageState *nextState = new pipeStageState;
+  bool isStall = false;
+  bool isBranch = false;
+
   //fetch stage
 
   //decode + RF
-
+  decodeStage();
   //Execute
 
   //Memory
@@ -25,14 +34,25 @@ int SIM_CoreReset(void) {
   //WB
 
   //update PC
+
 }
 
-/*! SIM_CoreClkTick: Update the core simulator's state given one clock cycle.
-  This function is expected to update the core pipeline given a clock cycle event.
+/*the Decode and RF stage:
+  ~ read from the RF and update src(1/2)val
+
+  Flags:
+  ~ isStall = RAW - check if register is needed and is rewriten in previous cmds
 */
-void SIM_CoreClkTick() {
-
+void decodeStage (){
+  
 }
+
+/* The Execute stage:
+   ~ Arithmetic operations (ADD,SUB,ADDI,SUBI)
+   ~ 
+
+*/
+
 
 /*! SIM_CoreGetState: Return the current core (pipeline) internal state
     curState: The returned current pipeline state
