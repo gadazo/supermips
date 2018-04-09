@@ -13,6 +13,18 @@
   \returns 0 on success. <0 in case of initialization failure.
 */
 int SIM_CoreReset(void) {
+  pipeStageState *nextState = new pipeStageState;
+  //fetch stage
+
+  //decode + RF
+
+  //Execute
+
+  //Memory
+
+  //WB
+
+  //update PC
 }
 
 /*! SIM_CoreClkTick: Update the core simulator's state given one clock cycle.
