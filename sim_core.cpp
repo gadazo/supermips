@@ -19,40 +19,82 @@ int SIM_CoreReset(void) {
   This function is expected to update the core pipeline given a clock cycle event.
 */
 void SIM_CoreClkTick() {
-  pipeStageState *nextState = new pipeStageState;
-  bool isStall = false;
+  pipeStageState *nextState = new pipeStageState[SIM_PIPELINE_DEPTH];
+  bool isStallDec = false;
+  bool isStallMem = false;
   bool isBranch = false;
-
+  SIM_cmd newCmd;
   //fetch stage
-
+  SIM_MemInstRead(curState->pc, newCmd);
+  nextState[0].cmd = newCmd;
+  nextState[0].src1Val = 0;
+  nextState[0].src2Val = 0;
   //decode + RF
-  decodeStage();
+  decodeStage(isStallDec);
   //Execute
-
+  executeStage();
   //Memory
-
+  memoryStage(isStallMem , isBranch);
   //WB
-
+  wbStage();
   //update PC
-
+  if ((isStallDec) || (isStallMem)){
+    //Stall - do not change the PC
+  }
+  else if (isBranch){
+    //Branch - change the PC to the new dest
+    else{
+      //PC+4
+    }
+  }
 }
 
-/*the Decode and RF stage:
+/* the Decode and RF stage:
   ~ read from the RF and update src(1/2)val
 
   Flags:
   ~ isStall = RAW - check if register is needed and is rewriten in previous cmds
 */
-void decodeStage (){
-  
+void decodeStage (bool &isStall){
+
+
+  //if stall is needed put the the curState[1] to nextState[1]
+
+  //if -s or -f wbStage will executed before the decodeStage
 }
 
 /* The Execute stage:
    ~ Arithmetic operations (ADD,SUB,ADDI,SUBI)
-   ~ 
-
+   ~ Comparison operations (BREQ,BRNEQ)
+   ~ Branch Destination Calculations (BR,BREQ,BRNEQ)
+   ~ Memory Destination Calculations (LOAD,STORE)
 */
+void executeStage(){
+  
+}
 
+/* the Memory Stage:
+   ~ Check if branch is needed
+   ~ Get information from the main memory
+
+   Flags:
+   ~ isStall = stall the pipe if couldn't retrieve data from the main memory
+   ~ isBranch = true if branch is taken.
+ */
+
+void memoryStage(bool &isStall , bool &isBranch){
+
+  //if stall is needed put the the curState[3] to nextState[3]
+
+}
+
+/* the Write Back Stage:
+   ~ writing the data back to the registers (ADD.ADDI.SUB,SUBI,LOAD)
+ */
+
+void wbStage(){
+  
+}
 
 /*! SIM_CoreGetState: Return the current core (pipeline) internal state
     curState: The returned current pipeline state
