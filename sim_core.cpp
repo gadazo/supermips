@@ -3,6 +3,7 @@
 
 #include "sim_api.h"
 
+//NETA!
 
 /*! SIM_CoreReset: Reset the processor core simulator machine to start new simulation
   Use this API to initialize the processor core simulator's data structures.
