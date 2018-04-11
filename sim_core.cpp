@@ -3,7 +3,8 @@
 
 #include "sim_api.h"
 
-//NETA!
+SIM_coreState* curState; //maybe static
+int32_t* pcState[SIM_PIPELINE_DEPTH];
 
 /*! SIM_CoreReset: Reset the processor core simulator machine to start new simulation
   Use this API to initialize the processor core simulator's data structures.
@@ -14,40 +15,64 @@
   \returns 0 on success. <0 in case of initialization failure.
 */
 int SIM_CoreReset(void) {
+	try {
+		curState = new SIM_coreState;
+		pcState = new int32_t;
+	} catch (std::bad_alloc) {
+		return -1;
+	}
+
+	curState->pc = 0;
+
+	for (int i=0 ; i<SIM_PIPELINE_DEPTH ; i++){
+		curState->pipeStageState[i].cmd = CMD_NOP;
+		curState->pipeStageState[i].src1Val = 0;
+		curState->pipeStageState[i].src2Val = 0;
+	}
+
+	for (int i=0 ; i<SIM_REGFILE_SIZE ; i++){
+		curState->regFile[i] = 0;
+	}
+
+	for (int i=0 ; i<SIM_PIPELINE_DEPTH ; i++){
+		pcState[i] = 0;
+	}
+	return 0;
 }
 
 /*! SIM_CoreClkTick: Update the core simulator's state given one clock cycle.
   This function is expected to update the core pipeline given a clock cycle event.
 */
 void SIM_CoreClkTick() {
-  pipeStageState *nextState = new pipeStageState[SIM_PIPELINE_DEPTH];
-  bool isStallDec = false;
-  bool isStallMem = false;
-  bool isBranch = false;
-  SIM_cmd newCmd;
-  //fetch stage
-  SIM_MemInstRead(curState->pc, newCmd);
-  nextState[0].cmd = newCmd;
-  nextState[0].src1Val = 0;
-  nextState[0].src2Val = 0;
-  //decode + RF
-  decodeStage(isStallDec);
-  //Execute
-  executeStage();
-  //Memory
-  memoryStage(isStallMem , isBranch);
-  //WB
-  wbStage();
-  //update PC
-  if ((isStallDec) || (isStallMem)){
-    //Stall - do not change the PC
-  }
-  else if (isBranch){
+	PipeStageState *nextState = new PipeStageState[SIM_PIPELINE_DEPTH];
+	bool isStallDec = false;
+	bool isStallMem = false;
+	bool isBranch = false;
+	SIM_cmd newCmd;
+	//fetch stage
+
+	SIM_MemInstRead(curState->pc, newCmd);
+	nextState[0].cmd = newCmd;
+	nextState[0].src1Val = 0;
+	nextState[0].src2Val = 0;
+	//decode + RF
+	decodeStage(isStallDec);
+	//Execute
+	executeStage();
+	//Memory
+	memoryStage(isStallMem , isBranch);
+	//WB
+	wbStage();
+	//update PC
+	if ((isStallDec) || (isStallMem)){
+	//Stall - do not change the PC
+	}
+	else if (isBranch){
     //Branch - change the PC to the new dest
+	}
     else{
       //PC+4
     }
-  }
 }
 
 /* the Decode and RF stage:
