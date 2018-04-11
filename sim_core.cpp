@@ -3,8 +3,14 @@
 
 #include "sim_api.h"
 
+void decodeStage(PipeStageState& nextState1, bool &isStall);
+void executeStage(PipeStageState& nextState2);
+void memoryStage(PipeStageState& nextState3, bool &isStall , bool &isBranch);
+void wbStage();
+
 SIM_coreState* curState; //maybe static
 int32_t* pcState[SIM_PIPELINE_DEPTH];
+
 
 /*! SIM_CoreReset: Reset the processor core simulator machine to start new simulation
   Use this API to initialize the processor core simulator's data structures.
@@ -17,7 +23,7 @@ int32_t* pcState[SIM_PIPELINE_DEPTH];
 int SIM_CoreReset(void) {
 	try {
 		curState = new SIM_coreState;
-		pcState = new int32_t;
+		pcState = new int32_t[SIM_PIPELINE_DEPTH];
 	} catch (std::bad_alloc) {
 		return -1;
 	}
@@ -51,16 +57,16 @@ void SIM_CoreClkTick() {
 	SIM_cmd newCmd;
 	//fetch stage
 
-	SIM_MemInstRead(curState->pc, newCmd);
+	SIM_MemInstRead(curState->pc, &newCmd);
 	nextState[0].cmd = newCmd;
 	nextState[0].src1Val = 0;
 	nextState[0].src2Val = 0;
 	//decode + RF
-	decodeStage(isStallDec);
+	decodeStage(nextState[1], isStallDec);
 	//Execute
-	executeStage();
+	executeStage(nextState[2]);
 	//Memory
-	memoryStage(isStallMem , isBranch);
+	memoryStage(nextState[3], isStallMem , isBranch);
 	//WB
 	wbStage();
 	//update PC
@@ -81,7 +87,7 @@ void SIM_CoreClkTick() {
   Flags:
   ~ isStall = RAW - check if register is needed and is rewriten in previous cmds
 */
-void decodeStage (bool &isStall){
+void decodeStage(PipeStageState& nextState1, bool &isStall){
 
 
   //if stall is needed put the the curState[1] to nextState[1]
@@ -95,8 +101,8 @@ void decodeStage (bool &isStall){
    ~ Branch Destination Calculations (BR,BREQ,BRNEQ)
    ~ Memory Destination Calculations (LOAD,STORE)
 */
-void executeStage(){
-  
+void executeStage(PipeStageState& nextState2){
+
 }
 
 /* the Memory Stage:
@@ -108,7 +114,7 @@ void executeStage(){
    ~ isBranch = true if branch is taken.
  */
 
-void memoryStage(bool &isStall , bool &isBranch){
+void memoryStage(PipeStageState& nextState3, bool &isStall , bool &isBranch){
 
   //if stall is needed put the the curState[3] to nextState[3]
 
