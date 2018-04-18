@@ -11,12 +11,9 @@
 //***************************
 // the struct is used to transfer values between the stages and for Forwarding
 typedef struct {
-	//int exe_index;
+	int dec_value;
 	int exe_value;
-	//int mem_idex;
 	int mem_value;
-	//int wb_index;
-	int wb_value;
 } dstValStruct;
 
 
@@ -29,8 +26,8 @@ typedef struct {
 
 //************************** Function
 void decodeStage(bool &isStall, int* pDstValDec);
-void executeStage();
-void memoryStage(bool &isStall, bool &isBranch);
+void executeStage(dstValStruct *nextDstVal);
+void memoryStage(bool &isStall, bool &isBranch, dstValStruct *nextDstVal);
 void wbStage();
 void initFU(forwardUnit* pForUn);
 bool checkForwarding(SIM_cmd *pCurCmd, forwardUnit& forUn);
@@ -74,9 +71,6 @@ int SIM_CoreReset(void) {
 
 	pcState[DECODE] = 0;
 	pcState[FETCH] = 0;
-	//for (int i=0 ; i<SIM_PIPELINE_DEPTH ; i++){
-	//	pcState[i] = 0;
-	//}
 	return 0;
 }
 
@@ -92,6 +86,8 @@ void SIM_CoreClkTick() {
 	int dstValDec[1][1] = { NOVALID, 0 }; //{isValid , value} the dst value for BRANCH, STORE commands
 	int nextDstValExe[1][1] = { NOVALID, 0 }; //the dst value for the next cycle
 
+	dstValStruct *nextDstVal = new dstValStruct;
+
 	//fetch stage
 	SIM_MemInstRead(prevState->pc, &newCmd);
 	newState->cmd = newCmd;
@@ -102,10 +98,10 @@ void SIM_CoreClkTick() {
 	decodeStage(isStallDec, &dstValDec);
 
 	//Execute
-	executeStage(nextDstValExe, dstValDec);
+	executeStage(nextDstVal);
 
 	//Memory
-	memoryStage(isStallMem, isBranch);
+	memoryStage(isStallMem, isBranch, nextDstVal);
 
 	//WB
 	wbStage();
@@ -285,8 +281,23 @@ void initFU(forwardUnit* pForUn) {
  ~ Branch Destination Calculations (BR,BREQ,BRNEQ)
  ~ Memory Destination Calculations (LOAD,STORE)
  */
-void executeStage() {
-	SIM_cmd cmd = prevState->pipeStageState[DECODE].cmd;
+void executeStage(dstValStruct *nextDstVal) {
+	SIM_cmd_opcode cmd = prevState->pipeStageState[DECODE].cmd.opcode;
+	int32_t src1Val = prevState->pipeStageState[EXECUTE].src1Val;
+	int32_t src2Val = prevState->pipeStageState[EXECUTE].src2Val;
+
+	switch (cmd){
+	case CMD_ADD: nextDstVal->exe_value = src1Val + src2Val; break;
+	case CMD_SUB: nextDstVal->exe_value = src1Val - src2Val; break;
+	case CMD_ADDI: nextDstVal->exe_value = src1Val + src2Val; break;
+	case CMD_SUBI: nextDstVal->exe_value = src1Val - src2Val; break;
+	case CMD_LOAD: nextDstVal->exe_value = src1Val + src2Val; break;
+	case CMD_STORE: nextDstVal->exe_value = dstVal->dec_value + src2Val; break;
+	case CMD_BR: nextDstVal->exe_value = dstVal->dec_value + pcState[DECODE]; break;
+	case CMD_BREQ: nextDstVal->exe_value = dstVal->dec_value + pcState[DECODE]; break;
+	case CMD_BRNEQ: nextDstVal->exe_value = dstVal->dec_value + pcState[DECODE]; break;
+	case CMD_HALT: nextDstVal->exe_value = 0; break;
+	}
 
 }
 
@@ -299,40 +310,39 @@ void executeStage() {
  ~ isStall = stall the pipe if couldn't retrieve data from the main memory
  ~ isBranch = true if branch is taken.
  */
-void memoryStage(bool &isStall, bool &isBranch) {
+void memoryStage(bool &isStall, bool &isBranch, dstValStruct *nextDstVal) {
 	//Check if branch is needed
-	SIM_cmd cmd = prevState->pipeStageState[EXECUTE].cmd;
+	SIM_cmd_opcode cmd = prevState->pipeStageState[EXECUTE].cmd.opcode;
 	int32_t src1Val = prevState->pipeStageState[EXECUTE].src1Val;
 	int32_t src2Val = prevState->pipeStageState[EXECUTE].src2Val;
 
-	if (cmd.opcode == CMD_BR) {
+	nextDstVal->mem_value = dstVal->exe_value;
+
+	if (cmd == CMD_BR) {
 		isBranch = true;
 		return;
-	} else if (cmd.opcode == CMD_BREQ){
+	} else if (cmd == CMD_BREQ){
 		if (src1Val == src2Val){
 			isBranch = true;
 		}
 		return;
-	} else if (cmd.opcode == CMD_BRNEQ){
+	} else if (cmd == CMD_BRNEQ){
 		if (src1Val != src2Val){
 			isBranch = true;
 		}
 		return;
 	}
 
-	//check if need to read something from mem: (may take more then 1 cycle)
-	if (cmd.opcode == CMD_LOAD){
-		//CMD_LOAD, dst <- Mem[src1 + src2]  (src2 may be an immediate)
-		if (SIM_MemDataRead( , ) != 0){ //the read isn't complete
+	if (cmd == CMD_LOAD){
+		if (SIM_MemDataRead(dstVal->exe_value, &nextDstVal->mem_value) != 0){ //the read isn't complete
+			nextDstVal->mem_value = 0;
 			isStall = true;
 			return;
 		}
 	}
 
-	//check if need to write something to mem:
-	if(cmd.opcode == CMD_STORE){
-		SIM_MemDataWrite( , );
-		//CMD_STORE, Mem[dst + src2] <- src1  (src2 may be an immediate)
+	if(cmd == CMD_STORE){
+		SIM_MemDataWrite(dstVal->exe_value, src1Val);
 	}
 
 	return;
@@ -343,11 +353,17 @@ void memoryStage(bool &isStall, bool &isBranch) {
  ~ writing the data back to the registers (ADD.ADDI.SUB,SUBI,LOAD)
  */
 void wbStage() {
-	if (dstVal[0][MEMS] != NOVALID){
-		prevState->regFile[dstVal[0][MEMS]] = dstVal[1][MEMS];
+	//if (dstVal[0][MEMS] != NOVALID){
+	//	prevState->regFile[dstVal[0][MEMS]] = dstVal[1][MEMS];
+	//}
+
+	SIM_cmd_opcode cmd = prevState->pipeStageState[MEMORY].cmd.opcode;
+
+	if (cmd == CMD_ADD || cmd == CMD_SUB || cmd == CMD_ADDI || cmd == CMD_SUBI
+			|| cmd == CMD_LOAD){
+		int dst_reg = prevState->pipeStageState[MEMORY].cmd.dst;
+		prevState->regFile[dst_reg] = dstVal->mem_value;
 	}
-
-
 
 	return;
 }
