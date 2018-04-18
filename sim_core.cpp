@@ -2,12 +2,8 @@
 /* This file should hold your implementation of the CPU pipeline core simulator */
 
 #include "sim_api.h"
-#define NROW 2
-#define NCOL 2
+#include <iostream>
 #define NOVALID -1
-#define EXES 0
-#define MEMS 1
-
 //***************************
 // the struct is used to transfer values between the stages and for Forwarding
 typedef struct {
@@ -27,7 +23,7 @@ typedef struct {
 } forwardUnit;
 
 //************************** Function
-void decodeStage(bool &isStall, int* pDstValDec);
+void decodeStage(bool &isStall, dataStruct *nextData);
 void executeStage(dataStruct *nextDstVal);
 void memoryStage(bool &isStall, bool &isBranch, dataStruct *nextDstVal);
 void wbStage();
@@ -54,15 +50,19 @@ int SIM_CoreReset(void) {
 	try {
 		prevState = new SIM_coreState;
 		pcState = new int[SIM_PIPELINE_DEPTH - 3]; //needed only until the EXECUTE stage
-		dstVal = new int[NROW][NCOL];
-	} catch (std::bad_alloc) {
+		data = new dataStruct;
+	} catch (std::bad_alloc& e) {
 		return -1;
 	}
-	dstVal = {{0,0} {0,0}};
-	prevState->pc = 0;
+	data->exe_value = 0;
+  data->mem_value = 0;
+  data->dst_value = 0;
+  data-> exe_index = NOVALID;
+  data->mem_index = NOVALID;
+  prevState->pc = 0;
 
 	for (int i = 0; i < SIM_PIPELINE_DEPTH; i++) {
-		prevState->pipeStageState[i].cmd = CMD_NOP;
+		prevState->pipeStageState[i].cmd.opcode = CMD_NOP;
 		prevState->pipeStageState[i].src1Val = 0;
 		prevState->pipeStageState[i].src2Val = 0;
 	}
@@ -85,8 +85,6 @@ void SIM_CoreClkTick() {
 	bool isStallMem = false;
 	bool isBranch = false;
 	SIM_cmd newCmd;
-	int dstValDec[1][1] = { NOVALID, 0 }; //{isValid , value} the dst value for BRANCH, STORE commands
-	int nextDstValExe[1][1] = { NOVALID, 0 }; //the dst value for the next cycle
 
 	dataStruct *nextData = new dataStruct;
 
@@ -97,7 +95,7 @@ void SIM_CoreClkTick() {
 	newState->src2Val = 0;
 
 	//decode + RF
-	decodeStage(isStallDec, &dstValDec);
+	decodeStage(isStallDec, nextData);
 
 	//Execute
 	executeStage(nextData);
@@ -114,37 +112,31 @@ void SIM_CoreClkTick() {
 		//do before Dec Stall because Dec Stall is included
 		PipeStageState *nopState = new PipeStageState;
 		initNopState(nopState);
-		prevState->pipeStageState[WRITEBACK] = *nopState;
-		dstVal[0][MEMS] = NOVALID;
-		dstVal[1][MEMS] = 0;
+    prevState->pipeStageState[WRITEBACK]= prevState->pipeStageState[MEMORY];
+		prevState->pipeStageState[MEMORY] = *nopState;
+    data->mem_index = NOVALID;
+    data->mem_value = 0 ;
 	} else if (isStallDec) {
 		// Stall - do not change the PC + move EXE,MEM,WB
 		PipeStageState *nopState = new PipeStageState;
 		initNopState(nopState);
-		prevState->pipeStageState[WRITEBACK] =
-				prevState->pipeStageState[MEMORY];
+		prevState->pipeStageState[WRITEBACK] = prevState->pipeStageState[MEMORY];
 		prevState->pipeStageState[MEMORY] = prevState->pipeStageState[EXECUTE];
 		prevState->pipeStageState[EXECUTE] = prevState->pipeStageState[DECODE];
 		prevState->pipeStageState[DECODE] = *nopState;
-		dstVal[0][EXES] = nextDstValExe[0];
-		dstVal[1][EXES] = nextDstValExe[1];
-		dstVal[0][MEMS] = dstVal[0][EXES];
-		dstVal[1][MEMS] = dstVal[1][EXES];
-		pcState[DECODE] = NOVALID;
+		data = nextData;
+    pcState[DECODE] = NOVALID;
 	} else if (isBranch) {
 		//Branch - change the PC to the new dest + FLUSH  TODO: Neta
 	} else {
 		//PC+4
 		prevState->pc = (prevState->pc) + 4;
-		prevState->pipeStageState[WRITEBACK] = prevState->pipeStageState[MEMORY]
-		prevState->pipeStageState[MEMORY] = nextState[MEMORY];
-		prevState->pipeStageState[EXECUTE] = nextState[EXECUTE];
-		prevState->pipeStageState[DECODE] = nextState[DECODE];
-		prevState->pipeStageState[FETCH] = nextState[FETCH];
-		dstVal[0][EXES] = nextDstValExe[0];
-		dstVal[1][EXES] = nextDstValExe[1];
-		dstVal[0][MEMS] = dstVal[0][EXES];
-		dstVal[1][MEMS] = dstVal[1][EXES];
+		prevState->pipeStageState[WRITEBACK] = prevState->pipeStageState[MEMORY];
+    prevState->pipeStageState[MEMORY] = prevState->pipeStageState[EXECUTE];
+		prevState->pipeStageState[EXECUTE] = prevState->pipeStageState[DECODE];
+		prevState->pipeStageState[DECODE] = prevState->pipeStageState[FETCH];
+		prevState->pipeStageState[FETCH] = *newState;
+    data = nextData;
 		pcState[DECODE] = pcState[FETCH];
 		pcState[FETCH] = prevState->pc;
 	}
@@ -156,7 +148,7 @@ void initNopState(PipeStageState *nopState) {
 	nopState->cmd.src1 = 0;
 	nopState->cmd.src2 = 0;
 	nopState->cmd.isSrc2Imm = false;
-	nopState->dst = 0;
+	nopState->cmd.dst = 0;
 	nopState->src1Val = 0;
 	nopState->src2Val = 0;
 	return;
@@ -169,13 +161,13 @@ void initNopState(PipeStageState *nopState) {
  Flags:
  ~ isStall = RAW - check if register is needed and is rewriten in previous cmds
  */
-void decodeStage(bool &isStall, int* pDstValDec) {
-	PipeStageState *curStage = prevState->pipeStageState[FETCH];
+ void decodeStage(bool &isStall, dataStruct *nextData) {
+	PipeStageState *curStage = &prevState->pipeStageState[FETCH];
 	SIM_cmd *pCurCmd = &(curStage->cmd);     //TODO: check if right probably not
 	forwardUnit *pForUn = new forwardUnit;
-	initFU(pforUn); //intializing the Forward Unit;
+	initFU(pForUn); //intializing the Forward Unit;
 
-	bool checkForward = checkForwarding(pCurCmd, pForUn);
+	bool checkForward = checkForwarding(pCurCmd, *pForUn);
 	if ((!forwarding) && (checkForward) && (!pForUn->noForward)) {
 		isStall = true;
 		return;
@@ -202,63 +194,64 @@ void decodeStage(bool &isStall, int* pDstValDec) {
 	// dstVal is needed only for the BRANCH commands
 	if ((pCurCmd->opcode == CMD_BR) || (pCurCmd->opcode == CMD_BREQ)
 			|| (pCurCmd->opcode == CMD_BRNEQ)) { //retrieving dst Value
-		pDstValDec[0] = 1;
 		if (pForUn->validDst)
-			pDstValDec[1] = pForUn->valDst;
+			nextData->dst_value = pForUn->valDst;
 		else
-			pDstValDec[1] = prevState->regFile[pCurCmd->dst];
+			nextData->dst_value = prevState->regFile[pCurCmd->dst];
 	}
+  else
+    nextData->dst_value = NOVALID;
 	return;
-}
+ }
 
 bool checkForwarding(SIM_cmd *pCurCmd, forwardUnit& forUn) {
 	bool isForwardingNeeded = false;
 	int reg1 = pCurCmd->src1;
 	int reg2 = (pCurCmd->isSrc2Imm) ? pCurCmd->src2 : NOVALID;
-	if (dstVal[0][EXES] == reg1) {
+	if (data->exe_index == reg1) {
 		isForwardingNeeded = true;
 		if (forwarding) {
 			forUn.valid1 = true;
-			forUn.val1 = dstVal[1][EXES];
+			forUn.val1 = data->exe_value;
 		}
-	} else if (dstVal[0][MEMS] == reg1) {
+	} else if (data->mem_index == reg1) {
 		isForwardingNeeded = true;
 		if (forwarding || split_regfile) {
 			forUn.noForward = (split_regfile) ? true : false;
 			forUn.valid1 = true;
-			forUn.val1 = dstVal[1][MEMS];
+			forUn.val1 = data->mem_value;
 		}
 	}
 	if (reg2 != NOVALID) {
-		if (dstVal[0][EXES] == reg2) {
+		if (data->exe_index == reg2) {
 			isForwardingNeeded = true;
 			if (forwarding) {
 				forUn.valid2 = true;
-				forUn.val2 = dstVal[1][EXES];
+				forUn.val2 = data->exe_value;
 			}
-		} else if (dstVal[0][MEMS] == reg2) {
+		} else if (data->mem_index == reg2) {
 			isForwardingNeeded = true;
 			if (forwarding || split_regfile) {
 				forUn.noForward = (split_regfile) ? true : false;
 				forUn.valid2 = true;
-				forUn.val2 = dstVal[1][MEMS];
+				forUn.val2 = data->mem_value;
 			}
 		}
 	}
 	if ((pCurCmd->opcode == CMD_BR) || (pCurCmd->opcode == CMD_BREQ)
 			|| (pCurCmd->opcode == CMD_BRNEQ)) {
 		int dst = pCurCmd->dst;
-		if (dstVal[0][EXES] == dst) {
+		if (data->exe_index == dst) {
 			isForwardingNeeded = true;
 			if (forwarding) {
 				forUn.validDst = true;
-				forUn.valDst = dstVal[1][EXES];
-			} else if (dstVal[0][MEMS] == dst) {
+				forUn.valDst = data->exe_value;
+			} else if (data->mem_index == dst) {
 				isForwardingNeeded = true;
 				if (forwarding || split_regfile) {
 					forUn.noForward = (split_regfile) ? true : false;
 					forUn.validDst = true;
-					forUn.valDst = dstVal[1][MEMS];
+					forUn.valDst = data->mem_index;
 				}
 			}
 		}
