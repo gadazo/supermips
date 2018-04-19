@@ -105,6 +105,7 @@ void SIM_CoreClkTick() {
 	newState->src1Val = 0;
 	newState->src2Val = 0;
 
+
 	if (split_regfile || forwarding) {
 		//WB
 		wbStage();
@@ -253,7 +254,9 @@ void decodeStage(bool &isStall, dataStruct &nextData) {
 bool checkForwarding(SIM_cmd *pCurCmd, forwardUnit& forUn) {
 	bool isForwardingNeeded = false;
 	int reg1 = pCurCmd->src1;
-	int reg2 = (pCurCmd->isSrc2Imm) ? pCurCmd->src2 : NOVALID; //TODO: I think it should be the opposite
+	//int reg2 = (pCurCmd->isSrc2Imm) ? pCurCmd->src2 : NOVALID; //TODO: I think it should be the opposite
+	int reg2 = (pCurCmd->isSrc2Imm) ? NOVALID : pCurCmd->src2;
+
 	if (data->exe_index == reg1) {
 		isForwardingNeeded = true;
 		if (forwarding) {
@@ -301,8 +304,8 @@ bool checkForwarding(SIM_cmd *pCurCmd, forwardUnit& forUn) {
 				}
 			}
 		}
-		return isForwardingNeeded; //TODO: should be after the next line (return this for all conditions)?
 	}
+	return isForwardingNeeded;
 }
 
 void initFU(forwardUnit* pForUn) {
@@ -323,8 +326,8 @@ void initFU(forwardUnit* pForUn) {
  */
 void executeStage(dataStruct &nextData) {
 	SIM_cmd_opcode cmd = prevState->pipeStageState[DECODE].cmd.opcode;
-	int32_t src1Val = prevState->pipeStageState[EXECUTE].src1Val;
-	int32_t src2Val = prevState->pipeStageState[EXECUTE].src2Val;
+	int32_t src1Val = prevState->pipeStageState[DECODE].src1Val;
+	int32_t src2Val = prevState->pipeStageState[DECODE].src2Val;
 
 	switch (cmd) {
 	case CMD_ADD:
@@ -362,6 +365,7 @@ void executeStage(dataStruct &nextData) {
 	if (cmd == CMD_ADD || cmd == CMD_SUB || cmd == CMD_ADDI || cmd == CMD_SUBI || cmd == CMD_LOAD ){
 		nextData.exe_index = prevState->pipeStageState[DECODE].cmd.dst;
 	}
+
 }
 
 /* the Memory Stage:
@@ -397,6 +401,7 @@ void memoryStage(bool &isStall, bool &isBranch, dataStruct &nextData) {
 
 	if (cmd == CMD_LOAD) {
 		if (SIM_MemDataRead(data->exe_value, &nextData.mem_value) != 0) { //the read isn't complete
+			//printf("reading from mem isn't complete\n");
 			nextData.mem_value = 0;
 			isStall = true;
 			return;
@@ -417,10 +422,6 @@ void memoryStage(bool &isStall, bool &isBranch, dataStruct &nextData) {
  ~ writing the data back to the registers (ADD.ADDI.SUB,SUBI,LOAD)
  */
 void wbStage() {
-	//if (dstVal[0][MEMS] != NOVALID){
-	//	prevState->regFile[dstVal[0][MEMS]] = dstVal[1][MEMS];
-	//}
-
 	SIM_cmd_opcode cmd = prevState->pipeStageState[MEMORY].cmd.opcode;
 
 	if (cmd == CMD_ADD || cmd == CMD_SUB || cmd == CMD_ADDI || cmd == CMD_SUBI
