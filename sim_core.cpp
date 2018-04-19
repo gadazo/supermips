@@ -59,7 +59,11 @@ int SIM_CoreReset(void) {
 		return -1;
 	}
 
-	initData(data);
+	data->dst_value = 0;
+	data->exe_value = 0;
+	data->mem_value = 0;
+	data->exe_index = NOVALID;
+	data->mem_index = NOVALID;
 
 	prevState->pc = 0;
 
@@ -355,6 +359,9 @@ void executeStage(dataStruct &nextData) {
 		break;
 	}
 
+	if (cmd == CMD_ADD || cmd == CMD_SUB || cmd == CMD_ADDI || cmd == CMD_SUBI || cmd == CMD_LOAD ){
+		nextData.exe_index = prevState->pipeStageState[DECODE].cmd.dst;
+	}
 }
 
 /* the Memory Stage:
@@ -400,6 +407,9 @@ void memoryStage(bool &isStall, bool &isBranch, dataStruct &nextData) {
 		SIM_MemDataWrite(data->exe_value, src1Val);
 	}
 
+	if (cmd == CMD_ADD || cmd == CMD_SUB || cmd == CMD_ADDI || cmd == CMD_SUBI || cmd == CMD_LOAD ){
+		nextData.mem_index = prevState->pipeStageState[EXECUTE].cmd.dst;
+	}
 	return;
 }
 
