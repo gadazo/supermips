@@ -366,43 +366,90 @@ void executeStage(dataStruct &nextData) {
  ~ isBranch = true if branch is taken.
  */
 void memoryStage(bool &isStall, bool &isBranch, dataStruct &nextData) {
-	//Check if branch is needed
 	SIM_cmd_opcode cmd = prevState->pipeStageState[MEMORY].cmd.opcode;
-	int32_t src1Val = prevState->pipeStageState[MEMORY].src1Val;
-	int32_t src2Val = prevState->pipeStageState[MEMORY].src2Val;
-  nextData.mem_index = dataReg->exe_index;
-	nextData.mem_value = dataReg->exe_value;
-	if (cmd == CMD_BR) {
-		isBranch = true;
-		return;
-	} else if (cmd == CMD_BREQ) {
-		if (src1Val == src2Val) {
+		int32_t src1Val = prevState->pipeStageState[MEMORY].src1Val;
+		int32_t src2Val = prevState->pipeStageState[MEMORY].src2Val;
+		nextData.mem_index = dataReg->exe_index;
+		nextData.mem_value = dataReg->exe_value;
+
+		//forward prev clk-tick exe result to current exe
+		if (memForward) {
+			if (cmd == CMD_ADD || cmd == CMD_SUB || cmd == CMD_ADDI || cmd == CMD_SUBI) { //it's an assert, but I don't want to add real asserts
+				int mem_dst_reg = prevState->pipeStageState[MEMORY].cmd.dst;
+				SIM_cmd exe_cmd = prevState->pipeStageState[EXECUTE].cmd;
+
+				if (mem_dst_reg == exe_cmd.src1) {
+					prevState->pipeStageState[EXECUTE].src1Val = dataReg->exe_value;
+				} else if (mem_dst_reg == exe_cmd.src2) {
+					prevState->pipeStageState[EXECUTE].src2Val = dataReg->exe_value;
+				} else if (mem_dst_reg = exe_cmd.dst) {
+					dataReg->dst_value = dataReg->exe_value;
+				}
+			}
+
+		}
+
+
+		switch(cmd){
+		case CMD_BR:
 			isBranch = true;
+			break;
+		case CMD_BREQ:
+			if (src1Val == src2Val) {
+				isBranch = true;
+			}
+			break;
+		case CMD_BRNEQ:
+			if (src1Val != src2Val) {
+				isBranch = true;
+			}
+			break;
+		case CMD_LOAD:
+			if (SIM_MemDataRead(dataReg->exe_value, &nextData.mem_value) != 0) { //the read isn't complete
+				nextData.mem_value = 0;
+				isStall = true;
+				return;
+			} else {
+				nextData.mem_index = prevState->pipeStageState[MEMORY].cmd.dst;
+			}
+			break;
+		case CMD_STORE:
+			SIM_MemDataWrite(dataReg->exe_value, src1Val);
+			break;
 		}
+
 		return;
-	} else if (cmd == CMD_BRNEQ) {
-		if (src1Val != src2Val) {
-			isBranch = true;
-		}
-		return;
-	}
 
-	if (cmd == CMD_LOAD) {
-		if (SIM_MemDataRead(dataReg->exe_value, &nextData.mem_value) != 0) { //the read isn't complete
-			nextData.mem_value = 0;
-			isStall = true;
-			return;
-		}
-    else{
-        nextData.mem_index = prevState->pipeStageState[MEMORY].cmd.dst;
-    }
-	}
-
-	if (cmd == CMD_STORE) {
-		SIM_MemDataWrite(dataReg->exe_value, src1Val);
-	}
-
-	return;
+	//	//Check if branch is needed
+	//	if (cmd == CMD_BR) {
+	//		isBranch = true;
+	//	}
+	//	if (cmd == CMD_BREQ) {
+	//		if (src1Val == src2Val) {
+	//			isBranch = true;
+	//		}
+	//	} else if (cmd == CMD_BRNEQ) {
+	//		if (src1Val != src2Val) {
+	//			isBranch = true;
+	//		}
+	//		return;
+	//	}
+	//
+	//	if (cmd == CMD_LOAD) {
+	//		if (SIM_MemDataRead(dataReg->exe_value, &nextData.mem_value) != 0) { //the read isn't complete
+	//			nextData.mem_value = 0;
+	//			isStall = true;
+	//			return;
+	//		} else {
+	//			nextData.mem_index = prevState->pipeStageState[MEMORY].cmd.dst;
+	//		}
+	//	}
+	//
+	//	if (cmd == CMD_STORE) {
+	//		SIM_MemDataWrite(dataReg->exe_value, src1Val);
+	//	}
+	//
+	//	return;
 }
 
 /* the Write Back Stage:
@@ -411,16 +458,27 @@ void memoryStage(bool &isStall, bool &isBranch, dataStruct &nextData) {
 void wbStage() {
 	SIM_cmd_opcode cmd = prevState->pipeStageState[WRITEBACK].cmd.opcode;
 
+	int wb_dst_reg;
+
 	if (cmd == CMD_ADD || cmd == CMD_SUB || cmd == CMD_ADDI || cmd == CMD_SUBI
 			|| cmd == CMD_LOAD) {
-		int dst_reg = prevState->pipeStageState[WRITEBACK].cmd.dst;
-		if (!split_regfile && !forwarding){
-			nextRegisters->regFile[dst_reg] = dataReg->mem_value;
+		wb_dst_reg = prevState->pipeStageState[WRITEBACK].cmd.dst;
+		if (!split_regfile && !forwarding) {
+			nextRegisters->regFile[wb_dst_reg] = dataReg->mem_value;
 		} else {
-			prevState->regFile[dst_reg] = dataReg->mem_value;
+			prevState->regFile[wb_dst_reg] = dataReg->mem_value;
 		}
-		//prevState->regFile[dst_reg] = data->mem_value;
-		//nextRegisters->regFile[dst_reg] = data->mem_value;
+	}
+
+	if (cmd == CMD_LOAD && wbForward) {
+		SIM_cmd exe_cmd = prevState->pipeStageState[EXECUTE].cmd;
+		if (wb_dst_reg == exe_cmd.src1) {
+			prevState->pipeStageState[EXECUTE].src1Val = dataReg->mem_value;
+		} else if (wb_dst_reg == exe_cmd.src2) {
+			prevState->pipeStageState[EXECUTE].src2Val = dataReg->mem_value;
+		} else if (wb_dst_reg = exe_cmd.dst) {
+			dataReg->dst_value = dataReg->mem_value;
+		}
 	}
 
 	return;
