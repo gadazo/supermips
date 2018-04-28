@@ -54,16 +54,6 @@ forwardingUnit fU[2];
  \returns 0 on success. <0 in case of initialization failure.
  */
 int SIM_CoreReset(void) {
-//	try {
-//		prevState = new SIM_coreState;
-//		pcState = new int[SIM_PIPELINE_DEPTH - 3]; //needed only until the EXECUTE stage
-//		dataReg = new dataStruct;
-//		fU = new forwardingUnit[2];
-//		nextRegisters = new SIM_coreState;
-//	} catch (std::bad_alloc& e) {
-//		return -1;
-//	}
-
 	fU[0].src1_valid = false;
 	fU[0].src1_value = 0;
 	fU[0].src2_valid = false;
@@ -511,16 +501,6 @@ void wbStage(dataStruct& nextData) {
  */
 void SIM_CoreGetState(SIM_coreState *curState) {
 	*curState = prevState;
-//	SIM_cmd_opcode opcode =
-//			prevState->pipeStageState[SIM_PIPELINE_DEPTH - 1].cmd.opcode;
-//	if (opcode == CMD_HALT) {
-//		//free all space!
-//		delete prevState;
-//		delete[] pcState;
-//		delete dataReg;
-//		delete[] fU;
-//		delete nextRegisters;
-//	}
 
 	return;
 }
